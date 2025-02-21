@@ -5,10 +5,7 @@
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#000000" />
-    <meta
-      name="description"
-      content="Web site created using create-eth-app"
-    />
+    <meta name="description" content="Web site created using create-eth-app" />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
     <!--
       manifest.json provides metadata used when your web app is installed on a
@@ -24,6 +21,28 @@
       work correctly both with client-side routing and a non-root public URL.
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              "site-black": "#1F1D2B",
+              "dim-white": "#E2E2E2",
+              "site-pink": "#E8006F",
+              "site-dim": "rgba(255, 255, 255, 0.02)",
+              "site-dim2": "rgba(255, 255, 255, 0.13)",
+            },
+            fontFamily: {
+              poppins: ["Poppins", "sans-serif"],
+            },
+            boxShadow: {
+              card: "0 8px 32px 0 rgba(0, 0, 0, 0.07)",
+            },
+          },
+        },
+      };
+    </script>
     <title>Ethereum App</title>
   </head>
   <body>
