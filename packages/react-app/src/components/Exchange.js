@@ -7,10 +7,11 @@ import {
   useEthers,
   useTokenAllowance,
   useTokenBalance,
+  useEtherBalance,
 } from "@usedapp/core";
 import { ethers } from "ethers";
 import { parseUnits } from "ethers/lib/utils";
-import { ROUTER_ADDRESS } from "../config";
+import { ROUTER_ADDRESS, WETH_ADDRESS } from "../config";
 import { AmountIn, AmountOut, Balance } from "./";
 import styles from "../styles";
 import {
@@ -29,23 +30,45 @@ const Exchange = ({ pools }) => {
   const [toToken, setToToken] = useState("");
   const [resetState, setResetState] = useState(false);
 
-  const fromValueBigNumber = parseUnits(fromValue);
+  const fromValueBigNumber = parseUnits(fromValue || "0");
   const availableTokens = getAvailableTokens(pools);
   const counterpartTokens = getCounterpartTokens(pools, fromToken);
   const pairAddress =
-    findPoolByTokens(pools, fromToken, toToken)?.address ?? "";
+    findPoolByTokens(
+      pools,
+      fromToken === "ETH" ? WETH_ADDRESS : fromToken,
+      toToken
+    )?.address ?? "";
   const routerContract = new Contract(ROUTER_ADDRESS, abis.router01);
-  const fromTokenContract = new Contract(fromToken, ERC20.abi);
-  const fromTokenBalance = useTokenBalance(fromToken, account);
-  const toTokenBalance = useTokenBalance(toToken, account);
+
+  // 无条件调用所有 Hooks
+  const etherBalance = useEtherBalance(account);
+  // 当 fromToken 是 "ETH" 时，使用 WETH_ADDRESS 作为占位符，避免传入无效地址
+  const effectiveFromToken = fromToken === "ETH" ? WETH_ADDRESS : fromToken;
+  const tokenBalance = useTokenBalance(effectiveFromToken, account);
   const tokenAllowance =
-    useTokenAllowance(fromToken, account, ROUTER_ADDRESS) || parseUnits("0");
-  const approvedNeeded = fromValueBigNumber.gt(tokenAllowance);
+    useTokenAllowance(effectiveFromToken, account, ROUTER_ADDRESS) ||
+    parseUnits("0");
+  const toTokenBalance = useTokenBalance(toToken, account);
+
+  // 根据 fromToken 选择余额和授权
+  const isFromEth = fromToken === "ETH";
+  const fromTokenBalance = isFromEth ? etherBalance : tokenBalance;
+  const effectiveTokenAllowance = isFromEth
+    ? ethers.constants.MaxUint256
+    : tokenAllowance;
+
+  const approvedNeeded =
+    !isFromEth && fromValueBigNumber.gt(effectiveTokenAllowance);
   const formValueIsGreaterThan0 = fromValueBigNumber.gt(parseUnits("0"));
   const hasEnoughBalance = fromValueBigNumber.lte(
     fromTokenBalance ?? parseUnits("0")
   );
-  // approve initiating a contract call (similar to use state) -> gives the state and the sender...
+
+  // 根据 fromToken 决定合约和方法
+  const fromTokenContract = isFromEth
+    ? null
+    : new Contract(fromToken, ERC20.abi);
   const {
     state: swapApproveState,
     send: swapApproveSend,
@@ -53,50 +76,75 @@ const Exchange = ({ pools }) => {
     transactionName: "onApproveRequested",
     gasLimitBufferPercentage: 10,
   });
-  // swap initiating a contract call (similar to use state) -> gives the state and the sender...
   const {
     state: swapExecuteState,
     send: swapExecuteSend,
-  } = useContractFunction(routerContract, "swapExactTokenForTokens", {
-    transactionName: "swapExactTokenForTokens",
-    gasLimitBufferPercentage: 10,
-  });
+  } = useContractFunction(
+    routerContract,
+    isFromEth ? "swapExactEthForTokens" : "swapExactTokenForTokens",
+    {
+      transactionName: isFromEth
+        ? "swapExactEthForTokens"
+        : "swapExactTokenForTokens",
+      gasLimitBufferPercentage: 10,
+    }
+  );
+
   const isApproving = isOperationPending(swapApproveState);
   const isSwapping = isOperationPending(swapExecuteState);
-  const canApprove = !isApproving && approvedNeeded;
+  const canApprove = !isFromEth && !isApproving && approvedNeeded;
   const canSwap =
-    !approvedNeeded &&
     !isSwapping &&
     formValueIsGreaterThan0 &&
-    hasEnoughBalance;
+    hasEnoughBalance &&
+    (!approvedNeeded || isFromEth);
 
   const successMessage = getSuccessMessage(swapApproveState, swapExecuteState);
   const failureMessage = getFailureMessage(swapApproveState, swapExecuteState);
 
   const onApproveRequested = () => {
-    swapApproveSend(ROUTER_ADDRESS, ethers.constants.MaxUint256);
+    if (!isFromEth) {
+      swapApproveSend(ROUTER_ADDRESS, ethers.constants.MaxUint256);
+    }
   };
+
   const onSwapRequested = () => {
-    swapExecuteSend(
-      fromValueBigNumber,
-      0,
-      [fromToken, toToken],
-      account,
-      Math.floor(Date.now() / 1000) + 60 * 20
-    ).then((_) => {
-      setFromValue("0");
-    });
+    if (isFromEth) {
+      swapExecuteSend(
+        0, // amountOutMin
+        [WETH_ADDRESS, toToken], // path
+        account,
+        Math.floor(Date.now() / 1000) + 60 * 20,
+        { value: fromValueBigNumber } // 发送 ETH
+      ).then(() => setFromValue("0"));
+    } else {
+      swapExecuteSend(
+        fromValueBigNumber,
+        0,
+        [fromToken, toToken],
+        account,
+        Math.floor(Date.now() / 1000) + 60 * 20
+      ).then(() => setFromValue("0"));
+    }
   };
+
   const onFromValueChange = (value) => {
     const trimmedValue = value.trim();
-
     try {
-      trimmedValue && parseUnits(value);
-      setFromValue(value);
-    } catch (e) {}
+      if (trimmedValue === "") {
+        setFromValue(""); // 允许临时为空
+      } else {
+        parseUnits(trimmedValue); // 验证输入
+        setFromValue(trimmedValue);
+      }
+    } catch (e) {
+      setFromValue("0"); // 无效输入恢复为0
+    }
   };
+
   const onFromTokenChange = (value) => {
     setFromToken(value);
+    setFromValue(""); // 重置为空
   };
 
   const onToTokenChange = (value) => {
@@ -113,12 +161,6 @@ const Exchange = ({ pools }) => {
     }
   }, [failureMessage, successMessage]);
 
-  console.log("fromTokenBalance:", fromTokenBalance?.toString());
-  console.log("toTokenBalance:", toTokenBalance?.toString());
-  console.log("account:", account);
-  console.log("fromToken:", fromToken);
-  console.log("toToken:", toToken);
-
   return (
     <div className="flex flex-col w-full items-center">
       <div className="mb-8">
@@ -134,7 +176,7 @@ const Exchange = ({ pools }) => {
       </div>
       <div className="mb-8 w-[100%]">
         <AmountOut
-          fromToken={fromToken}
+          fromToken={isFromEth ? WETH_ADDRESS : fromToken}
           toToken={toToken}
           amountIn={fromValueBigNumber}
           pairContract={pairAddress}
@@ -144,15 +186,18 @@ const Exchange = ({ pools }) => {
         />
         <Balance toTokenBalance={toTokenBalance} />
       </div>
-      {approvedNeeded && !isSwapping ? (
+      {!isFromEth && approvedNeeded && !isSwapping ? (
         <button
           disabled={!canApprove}
           onClick={onApproveRequested}
           className={`
-        ${
-          canApprove ? "bg-site-pink text-white" : "bg-site-dim2 text-site-dim2"
-        } ${styles.actionButton}
-      `}
+            ${
+              canApprove
+                ? "bg-site-pink text-white"
+                : "bg-site-dim2 text-site-dim2"
+            }
+            ${styles.actionButton}
+          `}
         >
           {isApproving ? "Approving..." : "Approve"}
         </button>
@@ -161,12 +206,15 @@ const Exchange = ({ pools }) => {
           disabled={!canSwap}
           onClick={onSwapRequested}
           className={`
-        ${
-          canSwap ? "bg-site-pink text-white" : "bg-site-dim2 text-site-dim2"
-        } ${styles.actionButton}
-      `}
+            ${
+              canSwap
+                ? "bg-site-pink text-white"
+                : "bg-site-dim2 text-site-dim2"
+            }
+            ${styles.actionButton}
+          `}
         >
-          {isApproving
+          {isSwapping
             ? "Swapping..."
             : hasEnoughBalance
             ? "Swap"
@@ -175,7 +223,7 @@ const Exchange = ({ pools }) => {
       )}
       {failureMessage && !resetState ? (
         <p className={styles.message}>{failureMessage}</p>
-      ) : "successMessage" ? (
+      ) : successMessage ? (
         <p className={styles.message}>{successMessage}</p>
       ) : (
         ""

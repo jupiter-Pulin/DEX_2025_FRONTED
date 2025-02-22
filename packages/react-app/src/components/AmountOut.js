@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { formatUnits } from "ethers/lib/utils";
-
+import { formatUnits, parseUnits } from "ethers/lib/utils";
 import { chevronDown } from "../assets";
 import { useAmountsOut, useOnClickOutside } from "../utils";
 import styles from "../styles";
@@ -16,9 +15,12 @@ const AmountOut = ({
 }) => {
   const [showList, setShowList] = useState(false);
   const [activeCurrency, setActiveCurrency] = useState("Select");
+  const [isVisible, setIsVisible] = useState(false);
   const ref = useRef();
   const amountOut =
-    useAmountsOut(pairContract, amountIn, fromToken, toToken) ?? 0;
+    useAmountsOut(pairContract, amountIn, fromToken, toToken) ??
+    parseUnits("0");
+
   useEffect(() => {
     if (Object.keys(currencies).includes(currencyValue)) {
       setActiveCurrency(currencies[currencyValue]);
@@ -26,6 +28,15 @@ const AmountOut = ({
       setActiveCurrency("Select");
     }
   }, [currencyValue, currencies]);
+
+  useEffect(() => {
+    if (amountOut.gt(parseUnits("0"))) {
+      setIsVisible(false); // 每次更新时重置为false
+      setTimeout(() => setIsVisible(true), 10); // 短暂延迟后变为true，触发动画
+    } else {
+      setIsVisible(false); // 如果amountOut为0，保持隐藏
+    }
+  }, [amountOut]);
 
   return (
     <div className={styles.amountContainer}>
@@ -35,7 +46,9 @@ const AmountOut = ({
         value={formatUnits(amountOut)}
         disabled
         onChange={() => {}}
-        className={styles.amountInput}
+        className={`${styles.amountInput} ${
+          isVisible ? styles.amountInputVisible : styles.amountInputFade
+        }`}
       />
       <div className="relative" onClick={() => setShowList(!showList)}>
         <button className={styles.currencyButton}>

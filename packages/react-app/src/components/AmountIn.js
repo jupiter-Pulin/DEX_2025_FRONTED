@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from "react";
-
 import { chevronDown } from "../assets";
 import { useOnClickOutside } from "../utils";
 import styles from "../styles";
@@ -14,25 +13,37 @@ const AmountIn = ({
 }) => {
   const [showList, setShowList] = useState(false);
   const [activeCurrency, setActiveCurrency] = useState("Select");
+  const [inputValue, setInputValue] = useState(value);
   const ref = useRef();
 
   useOnClickOutside(ref, () => setShowList(false));
+
+  useEffect(() => {
+    setInputValue(value);
+  }, [value]);
+
   useEffect(() => {
     if (Object.keys(currencies).includes(currencyValue))
       setActiveCurrency(currencies[currencyValue]);
     else setActiveCurrency("Select");
   }, [currencies, currencyValue]);
 
+  const handleInputChange = (e) => {
+    const newValue = e.target.value;
+    setInputValue(newValue); // 允许为空
+    if (typeof onChange === "function") {
+      onChange(newValue); // 直接传递用户输入，包括空值
+    }
+  };
+
   return (
     <div className={styles.amountContainer}>
       <input
         placeholder="0.0"
         type="number"
-        value={value}
+        value={inputValue}
         disabled={isSwapping}
-        onChange={(e) =>
-          typeof onChange === "function" && onChange(e.target.value)
-        }
+        onChange={handleInputChange}
         className={styles.amountInput}
       />
       <div className="relative" onClick={() => setShowList(!showList)}>
