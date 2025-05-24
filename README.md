@@ -2,7 +2,8 @@
 
 A decentralized exchange (DEX) interface built with **React**, **Usedapp**, and **Ethers.js**. Swap tokens seamlessly using an AMM-based backend.
 
-![Screenshot](./登陆界面.png)
+<img src="./登录界面.png" alt="DEX 页面截图" width="700"/>
+<img src="./展示界面.png" alt="DEX 页面截图" width="700"/>
 
 ## 🚀 Features
 
@@ -28,4 +29,4 @@ cd pulin-dex
 npm install
 npm start
 
-./展示界面.png
+
